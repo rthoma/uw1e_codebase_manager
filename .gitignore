@@ -1,0 +1,5 @@
+## uw1e_codebase_manager gitignore
+misc*/*
+*.org
+*.pyc
+*.gms
