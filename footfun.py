@@ -21,7 +21,7 @@ def foot_solver_call(file_list, hour_ahead):
         solve_str = (
             "model " + model_name[k] + " /all/;\n\n"
             "option reslim = 1000000;\n"
-            "option optcr = 0.01;\n"
+            "option optcr = 0.001;\n"
             "option threads = 1;\n\n"
             "solve " + model_name[k] + " using mip minimizing obj;\n\n"
         )
@@ -275,7 +275,12 @@ def foot_cf1_tepo_depo_exchange(file_list, hour_ahead, path_dict):
     action_out.put_precision = 0
     action_out.put_quantity = 'action(t, d)'
     action_out.rename_flag = True
-    action_out.rename_str = path_dict['depo_path'] + "Action_':0 N:1:0 '.csv"
+    action_out.rename_str = path_dict['depo_path']
+
+    if hour_ahead:
+        action_out.rename_str += "Action_':0 N:1:0 '_H':0 hour:2:0 '.csv"
+    else:
+        action_out.rename_str += "Action_':0 N:1:0 '.csv"
 
     action_out.write_put_file(cf_list[0])
 
@@ -292,7 +297,12 @@ def foot_cf1_tepo_depo_exchange(file_list, hour_ahead, path_dict):
     load_forecast.put_quantity = \
         'sum(s$(storage_map(d) eq ord(s)), demand(s, t)*s_base)'
     load_forecast.rename_flag = True
-    load_forecast.rename_str = path_dict['depo_path'] + "Load_forecast_':0 N:1:0 '.csv"
+    load_forecast.rename_str = path_dict['depo_path']
+
+    if hour_ahead:
+        load_forecast.rename_str += "Load_forecast_':0 N:1:0 '_H':0 hour:2:0 '.csv"
+    else:
+        load_forecast.rename_str += "Load_forecast_':0 N:1:0 '.csv"
 
     load_forecast.write_put_file(cf_list[0])
 
@@ -321,7 +331,12 @@ def foot_cf2_tepo_depo_exchange(file_list, hour_ahead, path_dict):
     min_load.put_precision = 4
     min_load.put_quantity = 'minimum_load(t, d)'
     min_load.rename_flag = True
-    min_load.rename_str = path_dict['depo_path'] + "Minimum_load_':0 N:1:0 '.csv"
+    min_load.rename_str = path_dict['depo_path']
+
+    if hour_ahead:
+        min_load.rename_str += "Minimum_load_':0 N:1:0 '_H':0 hour:2:0 '.csv"
+    else:
+        min_load.rename_str += "Minimum_load_':0 N:1:0 '.csv"
 
     min_load.write_put_file(cf_list[1])
 
@@ -337,8 +352,625 @@ def foot_cf2_tepo_depo_exchange(file_list, hour_ahead, path_dict):
     max_load.put_precision = 4
     max_load.put_quantity = 'maximum_load(t, d)'
     max_load.rename_flag = True
-    max_load.rename_str = path_dict['depo_path'] + "Maximum_load_':0 N:1:0 '.csv"
+    max_load.rename_str = path_dict['depo_path']
+
+    if hour_ahead:
+        max_load.rename_str += "Maximum_load_':0 N:1:0 '_H':0 hour:2:0 '.csv"
+    else:
+        max_load.rename_str += "Maximum_load_':0 N:1:0 '.csv"
 
     max_load.write_put_file(cf_list[1])
 
     # end foot_cf2_tepo_depo_exchange
+
+
+def output_unload_uc1(file_list, hour_ahead, path_dict):
+
+    uc_list = file_list[0:4:3]
+    cf_list = file_list[1:3]
+
+    for k in range(len(file_list)):
+        file_list[k].write(79*'*' + '\n')
+        file_list[k].write('*** UNLOADING OUTPUTS' + 57*' ' + '*\n')
+        file_list[k].write(79*'*' + '\n\n')
+
+    param_str = (
+        "parameters\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux(t, l),\n"
+        "    M_cong_snpd_aux(t, l),\n"
+        "    flow_cong_output(l, t),\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out(t, l),\n"
+        "    power_output_out(t, i),\n"
+        "    slack_solar_out(r, t),\n"
+        "    slack_wind_out(w, t),\n"
+        "    slack_fixed_out(f, t),\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total\n"
+        ";\n\n"
+    )
+
+    output_eq_str = "** Output equations\n\n"
+
+    if hour_ahead:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i)$(t_ha(t)), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                              + sum(b, g_lin.l(t, i, b)*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r)$(t_ha(t)), slack_solar.l(r, t))*VoRS\n"
+            "           + sum((t, w)$(t_ha(t)), slack_wind.l(w, t))*VoRS\n"
+            "           + sum((t, f)$(t_ha(t)), slack_fixed.l(f, t))*VoFS + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) - l_max(l) ge 0)) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) - l_max(l) ge 0)\n"
+            "                               and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(t_ha(t) and (M_cong_aux(t, l) gt 0.5)) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_UC.modelstat;\n"
+            "sst = TEPO_UC.solvestat;\n\n"
+            "power_flow_out(t, l)$(t_ha(t)) = pf.l(t, l)$(t_ha(t))*s_base + eps;\n"
+            "power_output_out(t, i)$(t_ha(t)) = g.l(t, i)$(t_ha(t))*s_base + eps;\n\n"
+            "slack_solar_out(r, t)$(t_ha(t)) = slack_solar.l(r, t)$(t_ha(t))*s_base + eps;\n"
+            "slack_wind_out(w, t)$(t_ha(t)) = slack_wind.l(w, t)$(t_ha(t))*s_base + eps;\n"
+            "slack_fixed_out(f, t)$(t_ha(t)) = slack_fixed.l(f, t)$(t_ha(t))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t)$(t_ha(t)), slack_solar.l(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t)$(t_ha(t)), slack_wind.l(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t)$(t_ha(t)), slack_fixed.l(f, t))*s_base + eps;\n\n"
+        )
+    else:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                      + sum(b, g_lin.l(t, i, b)*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r), slack_solar.l(r, t))*VoRS\n"
+            "           + sum((t, w), slack_wind.l(w, t))*VoRS\n"
+            "           + sum((t, f), slack_fixed.l(f, t))*VoFS + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) - l_max(l) ge 0) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) - l_max(l) ge 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) gt 0.5) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_UC.modelstat;\n"
+            "sst = TEPO_UC.solvestat;\n\n"
+            "power_flow_out(t, l) = pf.l(t, l)*s_base + eps;\n"
+            "power_output_out(t, i) = g.l(t, i)*s_base + eps;\n\n"
+            "slack_solar_out(r, t) = slack_solar.l(r, t)*s_base + eps;\n"
+            "slack_wind_out(w, t) = slack_wind.l(w, t)*s_base + eps;\n"
+            "slack_fixed_out(f, t) = slack_fixed.l(f, t)*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t), slack_solar.l(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t), slack_wind.l(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t), slack_fixed.l(f, t))*s_base + eps;\n\n"
+        )
+
+    unload_path = path_dict['data_path']
+
+    unload_str = (
+        "** Generating the output file\n\n"
+        "file uc1_gdxout;\n"
+        "put uc1_gdxout\n"
+    )
+
+    unload_str += "put_utility 'gdxout' / '"
+    unload_str += unload_path + "TEPO_UC1_day':0 N:1:0 '_1ES.gdx':0;\n\n"
+
+    unload_str += (
+        "execute_unload\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux,\n"
+        "    M_cong_snpd_aux,\n"
+        "    flow_cong_output,\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out,\n"
+        "    power_output_out,\n"
+        "    slack_solar_out,\n"
+        "    slack_wind_out,\n"
+        "    slack_fixed_out,\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total\n"
+        ";"
+    )
+
+    uc_list[0].write(param_str)
+    uc_list[0].write(output_eq_str)
+    uc_list[0].write(unload_str)
+
+    # end output_unload_uc1
+
+
+def output_unload_uc2(file_list, hour_ahead, path_dict):
+
+    uc_list = file_list[0:4:3]
+
+    param_str = (
+        "parameters\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux(t, l),\n"
+        "    M_cong_snpd_aux(t, l),\n"
+        "    flow_cong_output(l, t),\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out(t, l),\n"
+        "    power_output_out(t, i),\n"
+        "    slack_solar_out(r, t),\n"
+        "    slack_wind_out(w, t),\n"
+        "    slack_fixed_out(f, t),\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total,\n"
+        "    slack_pbal_out(s, t),\n"
+        "    slack_flow_out(l, t)\n"
+        ";\n\n"
+    )
+
+    output_eq_str = "** Output equations\n\n"
+
+    if hour_ahead:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i)$(t_ha(t)), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                              + sum(b, g_lin.l(t, i, b)*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r)$(t_ha(t)), slack_solar.l(r, t))*VoRS\n"
+            "           + sum((t, w)$(t_ha(t)), slack_wind.l(w, t))*VoRS\n"
+            "           + sum((t, f)$(t_ha(t)), slack_fixed.l(f, t))*VoFS\n"
+            "           + sum((t, s)$(t_ha(t)), slack_pbal.l(s, t))*INFEASIBLE_PENALTY\n"
+            "           + sum((t, l)$(t_ha(t)), slack_flow.l(l, t))*INFEASIBLE_PENALTY + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                               and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(t_ha(t) and (M_cong_aux(t, l) gt 0.5)) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_UC.modelstat;\n"
+            "sst = TEPO_UC.solvestat;\n\n"
+            "power_flow_out(t, l)$(t_ha(t)) = pf.l(t, l)$(t_ha(t))*s_base + eps;\n"
+            "power_output_out(t, i)$(t_ha(t)) = g.l(t, i)$(t_ha(t))*s_base + eps;\n\n"
+            "slack_solar_out(r, t)$(t_ha(t)) = slack_solar.l(r, t)$(t_ha(t))*s_base + eps;\n"
+            "slack_wind_out(w, t)$(t_ha(t)) = slack_wind.l(w, t)$(t_ha(t))*s_base + eps;\n"
+            "slack_fixed_out(f, t)$(t_ha(t)) = slack_fixed.l(f, t)$(t_ha(t))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t)$(t_ha(t)), slack_solar.l(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t)$(t_ha(t)), slack_wind.l(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t)$(t_ha(t)), slack_fixed.l(f, t))*s_base + eps;\n\n"
+            "slack_pbal_out(s, t)$(t_ha(t)) = slack_pbal.l(s, t)$(t_ha(t))*s_base + eps;\n"
+            "slack_flow_out(l, t)$(t_ha(t)) = slack_flow.l(l, t)$(t_ha(t))*s_base + eps;\n\n"
+        )
+    else:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                      + sum(b, g_lin.l(t, i, b)*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r), slack_solar.l(r, t))*VoRS\n"
+            "           + sum((t, w), slack_wind.l(w, t))*VoRS\n"
+            "           + sum((t, f), slack_fixed.l(f, t))*VoFS\n"
+            "           + sum((t, s), slack_pbal.l(s, t))*INFEASIBLE_PENALTY\n"
+            "           + sum((t, l), slack_flow.l(l, t))*INFEASIBLE_PENALTY + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) ge 0) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) gt 0.5) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_UC.modelstat;\n"
+            "sst = TEPO_UC.solvestat;\n\n"
+            "power_flow_out(t, l) = pf.l(t, l)*s_base + eps;\n"
+            "power_output_out(t, i) = g.l(t, i)*s_base + eps;\n\n"
+            "slack_solar_out(r, t) = slack_solar.l(r, t)*s_base + eps;\n"
+            "slack_wind_out(w, t) = slack_wind.l(w, t)*s_base + eps;\n"
+            "slack_fixed_out(f, t) = slack_fixed.l(f, t)*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t), slack_solar.l(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t), slack_wind.l(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t), slack_fixed.l(f, t))*s_base + eps;\n\n"
+            "slack_pbal_out(s, t) = slack_pbal.l(s, t)*s_base + eps;\n"
+            "slack_flow_out(l, t) = slack_flow.l(l, t)*s_base + eps;\n\n"
+        )
+
+    unload_path = path_dict['data_path']
+
+    unload_str = (
+        "** Generating the output file\n\n"
+        "file uc2_gdxout;\n"
+        "put uc2_gdxout\n"
+    )
+
+    unload_str += "put_utility 'gdxout' / '"
+    unload_str += unload_path + "TEPO_UC2_day':0 N:1:0 '_1ES.gdx':0;\n\n"
+
+    unload_str += (
+        "execute_unload\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux,\n"
+        "    M_cong_snpd_aux,\n"
+        "    flow_cong_output,\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out,\n"
+        "    power_output_out,\n"
+        "    slack_solar_out,\n"
+        "    slack_wind_out,\n"
+        "    slack_fixed_out,\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total,\n"
+        "    slack_pbal_out,\n"
+        "    slack_flow_out\n"
+        ";"
+    )
+
+    uc_list[1].write(param_str)
+    uc_list[1].write(output_eq_str)
+    uc_list[1].write(unload_str)
+
+    # end output_unload_uc2
+
+
+def output_unload_cf1(file_list, hour_ahead, path_dict):
+
+    cf_list = file_list[1:3]
+
+    param_str = (
+        "parameters\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    ess_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux(t, l),\n"
+        "    M_cong_snpd_aux(t, l),\n"
+        "    flow_cong_output(l, t),\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out(t, l),\n"
+        "    power_output_out(t, i),\n"
+        "    slack_solar_out(r, t),\n"
+        "    slack_wind_out(w, t),\n"
+        "    slack_fixed_out(f, t),\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total\n"
+        ";\n\n"
+    )
+
+    output_eq_str = "** Output equations\n\n"
+
+    if hour_ahead:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i)$(t_ha(t)), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                              + sum(b, (deltag_lin_plus.l(t, i, b)\n"
+            "                                      + deltag_lin_minus.l(t, i, b))*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r)$(t_ha(t)), slack_solar_plus.l(t, r)\n"
+            "                                 + slack_solar_minus.l(t, r))*penalty_pf\n"
+            "           + sum((t, w)$(t_ha(t)), slack_wind_plus.l(t, w)\n"
+            "                                 + slack_wind_minus.l(t, w))*penalty_pf\n"
+            "           + sum((f, t)$(t_ha(t)), slack_fixed_plus.l(t, f)\n"
+            "                                 + slack_fixed_minus.l(t, f))*penalty_pf + eps;\n\n"
+            "ess_cost = sum((t, d)$(t_ha(t) and (ch_ini(d, t) ge 0)),\n"
+            "                                    ch_TEPO.l(t, d)*2*ESS_ADJUST_PENALTY)\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) ge 0)),\n"
+            "                                    dis_TEPO.l(t, d)*2*ESS_ADJUST_PENALTY)\n"
+            "         + sum((t, d)$(t_ha(t) and (ch_ini(d, t) gt 0)),\n"
+            "                                    dis_TEPO_SC.l(t, d)*3*ESS_ADJUST_PENALTY)\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) gt 0)),\n"
+            "                                    ch_TEPO_SD.l(t, d)*3*ESS_ADJUST_PENALTY)\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) gt 0)),\n"
+            "                                    ch_TEPO.l(t, d)*6*ESS_ADJUST_PENALTY)\n"
+            "         + sum((t, d)$(t_ha(t) and (ch_ini(d, t) gt 0)),\n"
+            "                                    dis_TEPO.l(t, d)*6*ESS_ADJUST_PENALTY) + eps;\n\n"
+            "M_cong_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                               and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(t_ha(t) and (M_cong_aux(t, l) gt 0.5)) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_CR.modelstat;\n"
+            "sst = TEPO_CR.solvestat;\n\n"
+            "power_flow_out(t, l)$(t_ha(t)) = pf.l(t, l)$(t_ha(t))*s_base + eps;\n\n"
+            "power_output_out(t, i)$(t_ha(t)) = (gbis(t, i)$(t_ha(t))\n"
+            "                                  + deltag_plus.l(t, i)$(t_ha(t))\n"
+            "                                  - deltag_minus.l(t, i)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_solar_out(r, t)$(t_ha(t)) = (slack_solar_bis(r, t)$(t_ha(t))\n"
+            "                                 + slack_solar_plus.l(t, r)$(t_ha(t))\n"
+            "                                 - slack_solar_minus.l(t, r)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_wind_out(w, t)$(t_ha(t)) = (slack_wind_bis(w, t)$(t_ha(t))\n"
+            "                                + slack_wind_plus.l(t, w)$(t_ha(t))\n"
+            "                                - slack_wind_minus.l(t, w)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_fixed_out(f, t)$(t_ha(t)) = (slack_fixed_bis(f, t)$(t_ha(t))\n"
+            "                                 + slack_fixed_plus.l(t, f)$(t_ha(t))\n"
+            "                                 - slack_fixed_minus.l(t, f)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t)$(t_ha(t)), slack_solar_out(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t)$(t_ha(t)), slack_wind_out(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t)$(t_ha(t)), slack_fixed_out(f, t))*s_base + eps;\n\n"
+        )
+    else:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                      + sum(b, (deltag_lin_plus.l(t, i, b)\n"
+            "                              + deltag_lin_minus.l(t, i, b))*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r), slack_solar_plus.l(t, r)\n"
+            "                       + slack_solar_minus.l(t, r))*penalty_pf\n"
+            "           + sum((t, w), slack_wind_plus.l(t, w)\n"
+            "                       + slack_wind_minus.l(t, w))*penalty_pf\n"
+            "           + sum((f, t), slack_fixed_plus.l(t, f)\n"
+            "                       + slack_fixed_minus.l(t, f))*penalty_pf + eps;\n\n"
+            "ess_cost = sum((t, d), ch_total.l(t, d)\n"
+            "                     + dis_total.l(t, d))*ESS_ADJUST_PENALTY + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) ge 0) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) gt 0.5) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_CR.modelstat;\n"
+            "sst = TEPO_CR.solvestat;\n\n"
+            "power_flow_out(t, l) = pf.l(t, l)*s_base + eps;\n\n"
+            "power_output_out(t, i) = (gbis(t, i)\n"
+            "                        + deltag_plus.l(t, i)\n"
+            "                        - deltag_minus.l(t, i))*s_base + eps;\n\n"
+            "slack_solar_out(r, t) = (slack_solar_bis(r, t)\n"
+            "                       + slack_solar_plus.l(t, r)\n"
+            "                       - slack_solar_minus.l(t, r))*s_base + eps;\n\n"
+            "slack_wind_out(w, t) = (slack_wind_bis(w, t)\n"
+            "                      + slack_wind_plus.l(t, w)\n"
+            "                      - slack_wind_minus.l(t, w))*s_base + eps;\n\n"
+            "slack_fixed_out(f, t) = (slack_fixed_bis(f, t)\n"
+            "                       + slack_fixed_plus.l(t, f)\n"
+            "                       - slack_fixed_minus.l(t, f))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t), slack_solar_out(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t), slack_wind_out(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t), slack_fixed_out(f, t))*s_base + eps;\n\n"
+        )
+
+    unload_path = path_dict['data_path']
+
+    unload_str = (
+        "** Generating the output file\n\n"
+        "file cr1_gdxout;\n"
+        "put cr1_gdxout\n"
+    )
+
+    unload_str += "put_utility 'gdxout' / '"
+    unload_str += unload_path + "TEPO_CR1_day':0 N:1:0 '_1ES.gdx':0;\n\n"
+
+    unload_str += (
+        "execute_unload\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    ess_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux,\n"
+        "    M_cong_snpd_aux,\n"
+        "    flow_cong_output,\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out,\n"
+        "    power_output_out,\n"
+        "    slack_solar_out,\n"
+        "    slack_wind_out,\n"
+        "    slack_fixed_out,\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total\n"
+        ";"
+    )
+
+    cf_list[0].write(param_str)
+    cf_list[0].write(output_eq_str)
+    cf_list[0].write(unload_str)
+
+    # end output_unload_cf1
+
+
+def output_unload_cf2(file_list, hour_ahead, path_dict):
+
+    cf_list = file_list[1:3]
+
+    param_str = (
+        "parameters\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    ess_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux(t, l),\n"
+        "    M_cong_snpd_aux(t, l),\n"
+        "    flow_cong_output(l, t),\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out(t, l),\n"
+        "    power_output_out(t, i),\n"
+        "    slack_solar_out(r, t),\n"
+        "    slack_wind_out(w, t),\n"
+        "    slack_fixed_out(f, t),\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total,\n"
+        "    slack_pbal_out(s, t)\n"
+        ";\n\n"
+    )
+
+    output_eq_str = "** Output equations\n\n"
+
+    if hour_ahead:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i)$(t_ha(t)), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                              + sum(b, (deltag_lin_plus.l(t, i, b)\n"
+            "                                      + deltag_lin_minus.l(t, i, b))*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r)$(t_ha(t)), slack_solar_plus.l(t, r)\n"
+            "                                 + slack_solar_minus.l(t, r))*penalty_pf\n"
+            "           + sum((t, w)$(t_ha(t)), slack_wind_plus.l(t, w)\n"
+            "                                 + slack_wind_minus.l(t, w))*penalty_pf\n"
+            "           + sum((f, t)$(t_ha(t)), slack_fixed_plus.l(t, f)\n"
+            "                                 + slack_fixed_minus.l(t, f))*penalty_pf\n"
+            "           + sum((s, t)$(t_ha(t)), slack_pbal.l(s, t))*INFEASIBLE_PENALTY + eps;\n\n"
+            "ess_cost = sum((t, d)$(t_ha(t) and (ch_ini(d, t) ge 0)),\n"
+            "                                    ch_TEPO.l(t, d)*C_ch(d, t))\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) ge 0)),\n"
+            "                                    dis_TEPO.l(t, d)*C_dis(d, t))\n"
+            "         + sum((t, d)$(t_ha(t) and (ch_ini(d, t) gt 0)),\n"
+            "                                    dis_TEPO_SC.l(t, d)*C_SC(d, t))\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) gt 0)),\n"
+            "                                    ch_TEPO_SD.l(t, d)*C_SD(d, t))\n"
+            "         + sum((t, d)$(t_ha(t) and (dis_ini(d, t) gt 0)),\n"
+            "                                    ch_TEPO.l(t, d)*P_ch(d, t))\n"
+            "         + sum((t, d)$(t_ha(t) and (ch_ini(d, t) gt 0)),\n"
+            "                                    dis_TEPO.l(t, d)*P_dis(d, t)) + eps;\n\n"
+            "M_cong_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$(t_ha(t) and (abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                               and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(t_ha(t) and (M_cong_aux(t, l) gt 0.5)) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_CR.modelstat;\n"
+            "sst = TEPO_CR.solvestat;\n\n"
+            "power_flow_out(t, l)$(t_ha(t)) = pf.l(t, l)$(t_ha(t))*s_base + eps;\n\n"
+            "power_output_out(t, i)$(t_ha(t)) = (gbis(t, i)$(t_ha(t))\n"
+            "                                  + deltag_plus.l(t, i)$(t_ha(t))\n"
+            "                                  - deltag_minus.l(t, i)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_solar_out(r, t)$(t_ha(t)) = (slack_solar_bis(r, t)$(t_ha(t))\n"
+            "                                 + slack_solar_plus.l(t, r)$(t_ha(t))\n"
+            "                                 - slack_solar_minus.l(t, r)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_wind_out(w, t)$(t_ha(t)) = (slack_wind_bis(w, t)$(t_ha(t))\n"
+            "                                + slack_wind_plus.l(t, w)$(t_ha(t))\n"
+            "                                - slack_wind_minus.l(t, w)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_fixed_out(f, t)$(t_ha(t)) = (slack_fixed_bis(f, t)$(t_ha(t))\n"
+            "                                 + slack_fixed_plus.l(t, f)$(t_ha(t))\n"
+            "                                 - slack_fixed_minus.l(t, f)$(t_ha(t)))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t)$(t_ha(t)), slack_solar_out(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t)$(t_ha(t)), slack_wind_out(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t)$(t_ha(t)), slack_fixed_out(f, t))*s_base + eps;\n\n"
+            "slack_pbal_out(s, t)$(t_ha(t)) = slack_pbal.l(s, t)$(t_ha(t))*s_base + eps;\n\n"
+        )
+    else:
+        output_eq_str += (
+            "total_cost = obj.L;\n\n"
+            "generation_cost = sum((t, i), suc_sw(i)*y.l(t, i) + a(i)*v.l(t, i)\n"
+            "                      + sum(b, (deltag_lin_plus.l(t, i, b)\n"
+            "                              + deltag_lin_minus.l(t, i, b))*k(i, b))) + eps;\n\n"
+            "slack_cost = sum((t, r), slack_solar_plus.l(t, r)\n"
+            "                       + slack_solar_minus.l(t, r))*penalty_pf\n"
+            "           + sum((t, w), slack_wind_plus.l(t, w)\n"
+            "                       + slack_wind_minus.l(t, w))*penalty_pf\n"
+            "           + sum((f, t), slack_fixed_plus.l(t, f)\n"
+            "                       + slack_fixed_minus.l(t, f))*penalty_pf\n"
+            "           + sum((s, t), slack_pbal.l(s, t))*INFEASIBLE_PENALTY + eps;\n\n"
+            "ess_cost = sum((t, d)$(ch_ini(d, t) ge 0),\n"
+            "                       ch_TEPO.l(t, d)*C_ch(d, t))\n"
+            "         + sum((t, d)$(dis_ini(d, t) ge 0),\n"
+            "                       dis_TEPO.l(t, d)*C_dis(d, t))\n"
+            "         + sum((t, d)$(ch_ini(d, t) gt 0),\n"
+            "                       dis_TEPO_SC.l(t, d)*C_SC(d, t))\n"
+            "         + sum((t, d)$(dis_ini(d, t) gt 0),\n"
+            "                       ch_TEPO_SD.l(t, d)*C_SD(d, t))\n"
+            "         + sum((t, d)$(dis_ini(d, t) gt 0),\n"
+            "                       ch_TEPO.l(t, d)*P_ch(d, t))\n"
+            "         + sum((t, d)$(ch_ini(d, t) gt 0),\n"
+            "                       dis_TEPO.l(t, d)*P_dis(d, t)) + eps;\n\n"
+            "time_elapsed = timeElapsed;\n\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) ge 0) = 1 + eps;\n"
+            "M_cong_aux(t, l)$(abs(pf.l(t, l)) + eps - l_max(l) lt 0) = 0 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) ge 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 1 + eps;\n\n"
+            "M_cong_snpd_aux(t, l)$((abs(pf.l(t, l)) + eps - l_max(l) lt 0)\n"
+            "                       and (snpd_lines_map(l) eq 1)) = 0 + eps;\n\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) gt 0.5) = pf.l(t, l)*s_base + eps;\n"
+            "flow_cong_output(l, t)$(M_cong_aux(t, l) le 0.5) = 0 + eps;\n\n"
+            "mst = TEPO_CR.modelstat;\n"
+            "sst = TEPO_CR.solvestat;\n\n"
+            "power_flow_out(t, l) = pf.l(t, l)*s_base + eps;\n\n"
+            "power_output_out(t, i) = (gbis(t, i)\n"
+            "                        + deltag_plus.l(t, i)\n"
+            "                        - deltag_minus.l(t, i))*s_base + eps;\n\n"
+            "slack_solar_out(r, t) = (slack_solar_bis(r, t)\n"
+            "                       + slack_solar_plus.l(t, r)\n"
+            "                       - slack_solar_minus.l(t, r))*s_base + eps;\n\n"
+            "slack_wind_out(w, t) = (slack_wind_bis(w, t)\n"
+            "                      + slack_wind_plus.l(t, w)\n"
+            "                      - slack_wind_minus.l(t, w))*s_base + eps;\n\n"
+            "slack_fixed_out(f, t) = (slack_fixed_bis(f, t)\n"
+            "                       + slack_fixed_plus.l(t, f)\n"
+            "                       - slack_fixed_minus.l(t, f))*s_base + eps;\n\n"
+            "slack_solar_out_total = sum((r, t), slack_solar_out(r, t))*s_base + eps;\n"
+            "slack_wind_out_total = sum((w, t), slack_wind_out(w, t))*s_base + eps;\n"
+            "slack_fixed_out_total = sum((f, t), slack_fixed_out(f, t))*s_base + eps;\n\n"
+            "slack_pbal_out(s, t) = slack_pbal.l(s, t)*s_base + eps;\n\n"
+        )
+
+    unload_path = path_dict['data_path']
+
+    unload_str = (
+        "** Generating the output file\n\n"
+        "file cr1_gdxout;\n"
+        "put cr1_gdxout\n"
+    )
+
+    unload_str += "put_utility 'gdxout' / '"
+    unload_str += unload_path + "TEPO_CR1_day':0 N:1:0 '_1ES.gdx':0;\n\n"
+
+    unload_str += (
+        "execute_unload\n"
+        "    total_cost,\n"
+        "    generation_cost,\n"
+        "    slack_cost,\n"
+        "    ess_cost,\n"
+        "    time_elapsed,\n"
+        "    M_cong_aux,\n"
+        "    M_cong_snpd_aux,\n"
+        "    flow_cong_output,\n"
+        "    mst,\n"
+        "    sst,\n"
+        "    power_flow_out,\n"
+        "    power_output_out,\n"
+        "    slack_solar_out,\n"
+        "    slack_wind_out,\n"
+        "    slack_fixed_out,\n"
+        "    slack_solar_out_total,\n"
+        "    slack_wind_out_total,\n"
+        "    slack_fixed_out_total,\n"
+        "    slack_pbal_out\n"
+        ";"
+    )
+
+    cf_list[1].write(param_str)
+    cf_list[1].write(output_eq_str)
+    cf_list[1].write(unload_str)
+
+    # end output_unload_cf1

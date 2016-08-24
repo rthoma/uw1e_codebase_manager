@@ -29,15 +29,16 @@ class Putfile:
         tmp_body = ''
         tmp_body += 'file ' + self.file_label + ' '
         tmp_body += '/\'' + self.file_path + '\'/;\n'
-        tmp_body += 'put ' + self.file_label + ';\n'
-        tmp_body += 'put \"** ' + self.header_str + ' **\"/;\n'
+        tmp_body += 'put ' + self.file_label
 
         if self.rename_flag:
-            tmp_body += "put_utility 'ren' / '" + self.rename_str + "':0;\n\n"
+            tmp_body += '\n' + "put_utility 'ren' / '"
+            tmp_body += self.rename_str + "':0;\n\n"
         else:
-            tmp_body += '\n'
+            tmp_body += ';\n\n'
 
-        tmp_body += 'loop(t,\n'
+        tmp_body += 'put \"** ' + self.header_str + ' **\"/;\n'
+        tmp_body += 'loop(t' + self.hour_ahead*'$(t_ha(t))' + ',\n'
         tmp_body += 4*' ' + "put \",\", t.tl:0:0,\n" + ');\n\n'
         tmp_body += 'put /;\n'
         tmp_body += 'loop(' + self.index_var + ',\n'
@@ -46,10 +47,10 @@ class Putfile:
         domain_main = ''
         domain_end = ''
         if self.hour_ahead:
-            domain_main += 't_ha(t) and (' + self.hour_domain
-            domain_main += ' and ' + self.day_domain
-            domain_end += 't_ha(t) and (' + self.hour_domain_end
-            domain_end += ' and ' + self.day_domain_end
+            domain_main += '(t_ha(t) and (' + self.hour_domain
+            domain_main += ' and ' + self.day_domain + '))'
+            domain_end += '(t_ha(t) and (' + self.hour_domain_end
+            domain_end += ' or ' + self.day_domain_end + '))'
         else:
             domain_main = self.day_domain
             domain_end = self.day_domain_end

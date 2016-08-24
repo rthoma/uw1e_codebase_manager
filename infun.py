@@ -823,6 +823,17 @@ def input_initial_conditions(input_file, hour_ahead, input_spec, path_dict):
 
         da_injections.write_table(input_file)
 
+        da_charge_discharge_str = (
+            "parameter ch_day(d, t);\n"
+            "ch_day(d, t)$(injection_DA(d, t) gt 0) = injection_DA(d, t);\n"
+            "ch_day(d, t)$(injection_DA(d, t) le 0) = 0;\n\n"
+            "parameter dis_day(d, t);\n"
+            "dis_day(d, t)$(injection_DA(d, t) lt 0) = -injection_DA(d, t);\n"
+            "dis_day(d, t)$(injection_DA(d, t) ge 0) = 0;\n\n"
+        )
+
+        input_file.write(da_charge_discharge_str)
+
     # end input_initial_conditions
 
 
@@ -834,6 +845,10 @@ def input_time_horizon_logic(input_file, hour_ahead):
 
     if hour_ahead:
 
+# "    demand(s, t)$(t_ha(t) and (ord(t) le 24)) =\n"
+# "        d_day(day, s, t)/s_base\n"
+# "        + sum(d$(storage_map(d) eq ord(s)), injection_DA(d, t));\n\n"
+
         ha_horizon_logic_str = (
             "alias(t, tt);\n"
             "alias(day, dayd);\n\n"
@@ -844,8 +859,7 @@ def input_time_horizon_logic(input_file, hour_ahead):
             "    k(i, b) = k_day(day, i, b)*s_base;\n\n"
             "** Read the demand and generation data for the selected day\n\n"
             "    demand(s, t)$(t_ha(t) and (ord(t) le 24)) =\n"
-            "        d_day(day, s, t)/s_base\n"
-            "        + sum(d$(storage_map(d) eq ord(s)), injection_DA(d, t));\n\n"
+            "        d_day(day, s, t)/s_base;\n\n"
             "    sol_deterministic(t, r)$(t_ha(t) and (ord(t) le 24)) =\n"
             "        sol_deterministic_day(day, t, r)/s_base;\n\n"
             "    fix_deterministic(f, t)$(t_ha(t) and (ord(t) le 24)) =\n"

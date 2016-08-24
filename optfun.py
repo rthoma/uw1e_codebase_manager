@@ -24,6 +24,8 @@ def write_cost_function(file_list, hour_ahead):
     cost.operator = 'e'
     cost.lhs = 'obj'
 
+    # UC Models
+
     cost.rhs = "sum((t, i)"
     cost.rhs += cost.hour_ahead*"$(t_ha(t))" + ', '
     cost.rhs += "suc_sw(i)*y(t, i) + a(i)*v(t, i)\n"
@@ -52,81 +54,117 @@ def write_cost_function(file_list, hour_ahead):
 
     cost.write_constraint(uc_list[1])
 
-    cost.rhs = "sum((t, i)"
-    cost.rhs += cost.hour_ahead*"$(t_ha(t))" + ', '
-    cost.rhs += "suc_sw(i)*y(t, i) + a(i)*v(t, i)\n"
-    cost.rhs += (14 + cost.hour_ahead*10)*' '
-    cost.rhs += "+ sum(b, (deltag_lin_plus(t, i, b)\n"
-    cost.rhs += (22 + cost.hour_ahead*10)*' '
-    cost.rhs += "+ deltag_lin_minus(t, i, b))*k(i, b)))\n"
+    # CF Model 1
 
-    sum_list = [("sum((t, r)", "slack_solar_plus(t, r)\n",
-                               "slack_solar_minus(t, r))*penalty_pf\n"),
-                ("sum((t, w)", "slack_wind_plus(t, w)\n",
-                               "slack_wind_minus(t, w))*penalty_pf\n"),
-                ("sum((f, t)", "slack_fixed_plus(t, f)\n",
-                               "slack_fixed_minus(t, f))*penalty_pf\n"),
-                ("sum((t, d)", "ch_total(t, d)\n",
-                               "dis_total(t, d))*ESS_ADJUST_PENALTY\n")]
+    cost_cf_rhs_stub = "sum((t, i)"
+    cost_cf_rhs_stub += cost.hour_ahead*"$(t_ha(t))" + ', '
+    cost_cf_rhs_stub += "suc_sw(i)*y(t, i) + a(i)*v(t, i)\n"
+    cost_cf_rhs_stub += (14 + cost.hour_ahead*10)*' '
+    cost_cf_rhs_stub += "+ sum(b, (deltag_lin_plus(t, i, b)\n"
+    cost_cf_rhs_stub += (22 + cost.hour_ahead*10)*' '
+    cost_cf_rhs_stub += "+ deltag_lin_minus(t, i, b))*k(i, b)))\n"
 
-    for sum_tuple in sum_list:
-        cost.rhs += 10*' ' + '+ ' + sum_tuple[0]
-        cost.rhs += cost.hour_ahead*"$(t_ha(t))" + ', ' + sum_tuple[1]
+    slack_sum_list = [
+        ("sum((t, r)", "slack_solar_plus(t, r)",
+                       "slack_solar_minus(t, r))*penalty_pf"),
+        ("sum((t, w)", "slack_wind_plus(t, w)",
+                       "slack_wind_minus(t, w))*penalty_pf"),
+        ("sum((f, t)", "slack_fixed_plus(t, f)",
+                       "slack_fixed_minus(t, f))*penalty_pf")
+    ]
 
-        if sum_tuple[2]:
-            cost.rhs += (22 + cost.hour_ahead*10)*' '
-            cost.rhs += '+ ' + sum_tuple[2]
+    for sum_tuple in slack_sum_list:
+        cost_cf_rhs_stub += 10*' ' + '+ ' + sum_tuple[0]
+        cost_cf_rhs_stub += cost.hour_ahead*'$(t_ha(t))'
+        cost_cf_rhs_stub += ', ' + sum_tuple[1] + '\n'
+        cost_cf_rhs_stub += (22 + 10*cost.hour_ahead)*' '
+        cost_cf_rhs_stub += '+ ' + sum_tuple[2] + '\n'
 
-    cost.write_constraint(cf_list[0])
+    cost.rhs = cost_cf_rhs_stub
 
-    cost.rhs = "sum((t, i)"
-    cost.rhs += cost.hour_ahead*"$(t_ha(t))" + ', '
-    cost.rhs += "suc_sw(i)*y(t, i) + a(i)*v(t, i)\n"
-    cost.rhs += (14 + cost.hour_ahead*10)*' '
-    cost.rhs += "+ sum(b, (deltag_lin_plus(t, i, b)\n"
-    cost.rhs += (22 + cost.hour_ahead*10)*' '
-    cost.rhs += "+ deltag_lin_minus(t, i, b))*k(i, b)))\n"
+    if not cost.hour_ahead:
+        cost.rhs += 10*' ' + "+ sum((t, d), ch_total(t, d)\n"
+        cost.rhs += (22 + 10*cost.hour_ahead)*' '
+        cost.rhs += "+ dis_total(t, d))*ESS_ADJUST_PENALTY\n"
 
-    sum_list = sum_list[:-1]
+        cost.write_constraint(cf_list[0])
 
-    for sum_tuple in sum_list:
-        cost.rhs += 10*' ' + '+ ' + sum_tuple[0]
-        cost.rhs += cost.hour_ahead*"$(t_ha(t))" + ', ' + sum_tuple[1]
+        # end DA_CF_Model
 
-        if sum_tuple[2]:
-            cost.rhs += (22 + cost.hour_ahead*10)*' '
-            cost.rhs += '+ ' + sum_tuple[2]
+    else:
+        cost_dict = {
+            'ch_TEPO_cost': '2*ESS_ADJUST_PENALTY',
+            'dis_TEPO_cost': '2*ESS_ADJUST_PENALTY',
+            'SC_TEPO_cost': '3*ESS_ADJUST_PENALTY',
+            'SD_TEPO_cost': '3*ESS_ADJUST_PENALTY',
+            'ch_TEPO_penalty': '6*ESS_ADJUST_PENALTY',
+            'dis_TEPO_penalty': '6*ESS_ADJUST_PENALTY'
+        }
 
-    sum_list = [("sum((t, d)", "(ch_DEPO(d, t) ge 0)",
-                               "ch_TEPO(t, d)*C_ch(d, t))\n"),
-                ("sum((t, d)", "(dis_DEPO(d, t) ge 0)",
-                               "dis_TEPO(t, d)*C_dis(d, t))\n"),
-                ("sum((t, d)", "(ch_DEPO(d, t) gt 0)",
-                               "dis_TEPO_SC(t, d)*C_SC(d, t))\n"),
-                ("sum((t, d)", "(dis_DEPO(d, t) gt 0)",
-                               "ch_TEPO_SD(t, d)*C_SD(d, t))\n"),
-                ("sum((t, d)", "(dis_DEPO(d, t) gt 0)",
-                               "ch_TEPO(t, d)*P_ch(d, t))\n"),
-                ("sum((t, d)", "(ch_DEPO(d, t) gt 0)",
-                               "dis_TEPO(t, d)*P_dis(d, t))\n"),
-                ("sum((s, t)", '', "slack_pbal(s, t))*INFEASIBLE_PENALTY\n")]
+        ess_sum_list = [
+            ("sum((t, d)", "(ch_ini(d, t) ge 0)",
+                           "ch_TEPO(t, d)*" + cost_dict['ch_TEPO_cost']),
+            ("sum((t, d)", "(dis_ini(d, t) ge 0)",
+                           "dis_TEPO(t, d)*" + cost_dict['dis_TEPO_cost']),
+            ("sum((t, d)", "(ch_ini(d, t) gt 0)",
+                           "dis_TEPO_SC(t, d)*" + cost_dict['SC_TEPO_cost']),
+            ("sum((t, d)", "(dis_ini(d, t) gt 0)",
+                           "ch_TEPO_SD(t, d)*" + cost_dict['SD_TEPO_cost']),
+            ("sum((t, d)", "(dis_ini(d, t) gt 0)",
+                           "ch_TEPO(t, d)*" + cost_dict['ch_TEPO_penalty']),
+            ("sum((t, d)", "(ch_ini(d, t) gt 0)",
+                           "dis_TEPO(t, d)*" + cost_dict['dis_TEPO_penalty'])
+        ]
 
-    for sum_tuple in sum_list:
+        for sum_elem in ess_sum_list:
+            cost.rhs += 10*' ' + '+ ' + sum_elem[0]
+            cost.rhs += '$' + '(t_ha(t) and ' + sum_elem[1] + '),\n'
+            cost.rhs += (24 + 13*cost.hour_ahead)*' ' + sum_elem[2] + ')\n'
 
-        cost.rhs += 10*' ' + '+ ' + sum_tuple[0]
+        cost.write_constraint(cf_list[0])
 
-        if sum_tuple[1]:
-            if cost.hour_ahead:
-                cost.rhs += "$(t_ha(t) and " + sum_tuple[1] + "),\n" + 24*' '
-            else:
-                cost.rhs += '$' + sum_tuple[1] + ', '
+        # end HA_CF_Model
 
-            cost.rhs += sum_tuple[2]
+    # CF Model 2
+
+    cost.rhs = cost_cf_rhs_stub
+
+    cost_dict = {
+        'ch_TEPO_cost': 'C_ch(d, t)',
+        'dis_TEPO_cost': 'C_dis(d, t)',
+        'SC_TEPO_cost': 'C_SC(d, t)',
+        'SD_TEPO_cost': 'C_SD(d, t)',
+        'ch_TEPO_penalty': 'P_ch(d, t)',
+        'dis_TEPO_penalty': 'P_dis(d, t)'
+    }
+
+    ess_sum_list = [
+        ("sum((t, d)", "(ch_ini(d, t) ge 0)",
+                       "ch_TEPO(t, d)*" + cost_dict['ch_TEPO_cost']),
+        ("sum((t, d)", "(dis_ini(d, t) ge 0)",
+                       "dis_TEPO(t, d)*" + cost_dict['dis_TEPO_cost']),
+        ("sum((t, d)", "(ch_ini(d, t) gt 0)",
+                       "dis_TEPO_SC(t, d)*" + cost_dict['SC_TEPO_cost']),
+        ("sum((t, d)", "(dis_ini(d, t) gt 0)",
+                       "ch_TEPO_SD(t, d)*" + cost_dict['SD_TEPO_cost']),
+        ("sum((t, d)", "(dis_ini(d, t) gt 0)",
+                       "ch_TEPO(t, d)*" + cost_dict['ch_TEPO_penalty']),
+        ("sum((t, d)", "(ch_ini(d, t) gt 0)",
+                       "dis_TEPO(t, d)*" + cost_dict['dis_TEPO_penalty'])
+    ]
+
+    for sum_elem in ess_sum_list:
+        cost.rhs += 10*' ' + '+ ' + sum_elem[0]
+
+        if cost.hour_ahead:
+            cost.rhs += '$' + '(t_ha(t) and ' + sum_elem[1] + '),\n'
         else:
-            if cost.hour_ahead:
-                cost.rhs += "$(t_ha(t))"
+            cost.rhs += '$' + sum_elem[1] + ',\n'
 
-            cost.rhs += ', ' + sum_tuple[2]
+        cost.rhs += (24 + 13*cost.hour_ahead)*' ' + sum_elem[2] + ')\n'
+
+    cost.rhs += 10*' ' + "+ sum((s, t)" + cost.hour_ahead*'$(t_ha(t))'
+    cost.rhs += ", slack_pbal(s, t))*INFEASIBLE_PENALTY\n"
 
     cost.write_constraint(cf_list[1])
 
@@ -521,6 +559,13 @@ def write_power_balance(file_list, hour_ahead):
     power_balance.comment = "Nodal power balance equations"
     power_balance.domain = '(t, s)'
     power_balance.lhs = 'demand(s, t)'
+
+    if hour_ahead:
+        power_balance.lhs += (
+            "\n        + sum(d$(storage_map(d) eq ord(s)),\n"
+            "                 ch_day(d, t) - dis_day(d, t))"
+        )
+
     power_balance.rhs = \
         ("\n          sum(i$(gen_map(i) eq ord(s)), g(t, i))\n"
          "        + sum(f$(fix_map(f) eq ord(s)), fix_deterministic(f, t)\n"
@@ -807,6 +852,158 @@ def write_slack_fixed(file_list, hour_ahead):
     # end write_slack_fixed
 
 
+def write_eq_ch_total(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    eq_ch_total = optdef.Constraint()
+    eq_ch_total.hour_ahead = hour_ahead
+    eq_ch_total.name = 'eq_ch_total'
+    eq_ch_total.comment = "Energy storage total charge calculation"
+    eq_ch_total.domain = '(t, d)'
+    eq_ch_total.lhs = "ch_total(t, d)"
+    eq_ch_total.rhs = "ch_ini(d, t) + ch_TEPO(t, d) - dis_TEPO_SC(t, d)"
+    eq_ch_total.operator = 'e'
+
+    for cf_handle in cf_list:
+        eq_ch_total.write_constraint(cf_handle)
+
+    # end write_eq_ch_total
+
+
+def write_eq_dis_total(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    eq_dis_total = optdef.Constraint()
+    eq_dis_total.hour_ahead = hour_ahead
+    eq_dis_total.name = 'eq_dis_total'
+    eq_dis_total.comment = "Energy storage total discharge calculation"
+    eq_dis_total.domain = '(t, d)'
+    eq_dis_total.lhs = "dis_total(t, d)"
+    eq_dis_total.rhs = "dis_ini(d, t) + dis_TEPO(t, d) - ch_TEPO_SD(t, d)"
+    eq_dis_total.operator = 'e'
+
+    for cf_handle in cf_list:
+        eq_dis_total.write_constraint(cf_handle)
+
+    # end write_eq_dis_total
+
+
+def write_ch_total_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    ch_total_limit = optdef.Constraint()
+    ch_total_limit.hour_ahead = hour_ahead
+    ch_total_limit.name = 'ch_total_limit'
+    ch_total_limit.comment = "Energy storage charging limit"
+    ch_total_limit.domain = '(t, d)'
+    ch_total_limit.lhs = "ch_total(t, d)"
+    ch_total_limit.rhs = "ES_power_max(d)*v_ch(t, d)"
+    ch_total_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        ch_total_limit.write_constraint(cf_handle)
+
+    # end write_ch_total_limit
+
+
+def write_dis_total_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    dis_total_limit = optdef.Constraint()
+    dis_total_limit.hour_ahead = hour_ahead
+    dis_total_limit.name = 'dis_total_limit'
+    dis_total_limit.comment = "Energy storage discharging limit"
+    dis_total_limit.domain = '(t, d)'
+    dis_total_limit.lhs = "dis_total(t, d)"
+    dis_total_limit.rhs = "ES_power_max(d)*(1 - v_ch(t, d))"
+    dis_total_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        dis_total_limit.write_constraint(cf_handle)
+
+    # end write_dis_total_limit
+
+
+def write_ch_TEPO_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    ch_TEPO_limit = optdef.Constraint()
+    ch_TEPO_limit.hour_ahead = hour_ahead
+    ch_TEPO_limit.name = 'ch_TEPO_limit'
+    ch_TEPO_limit.comment = "TEPO charging limit"
+    ch_TEPO_limit.domain = '(t, d)'
+    ch_TEPO_limit.lhs = "ch_TEPO(t, d)"
+    ch_TEPO_limit.rhs = "Bound_ch(t, d)*y_ch(t, d)"
+    ch_TEPO_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        ch_TEPO_limit.write_constraint(cf_handle)
+
+    # end write_ch_TEPO_limit
+
+
+def write_dis_SC_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    dis_SC_limit = optdef.Constraint()
+    dis_SC_limit.hour_ahead = hour_ahead
+    dis_SC_limit.name = 'dis_SC_limit'
+    dis_SC_limit.comment = "TEPO stop charging limit"
+    dis_SC_limit.domain = '(t, d)'
+    dis_SC_limit.lhs = "dis_TEPO_SC(t, d)"
+    dis_SC_limit.rhs = "Bound_SC(t, d)*(1 - y_ch(t, d))"
+    dis_SC_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        dis_SC_limit.write_constraint(cf_handle)
+
+    # end write_dis_SC_limit
+
+
+def write_dis_TEPO_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    dis_TEPO_limit = optdef.Constraint()
+    dis_TEPO_limit.hour_ahead = hour_ahead
+    dis_TEPO_limit.name = 'dis_TEPO_limit'
+    dis_TEPO_limit.comment = "TEPO discharging limit"
+    dis_TEPO_limit.domain = '(t, d)'
+    dis_TEPO_limit.lhs = "dis_TEPO(t, d)"
+    dis_TEPO_limit.rhs = "Bound_dis(t, d)*z_ch(t, d)"
+    dis_TEPO_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        dis_TEPO_limit.write_constraint(cf_handle)
+
+    # end write_dis_TEPO_limit
+
+
+def write_ch_SD_limit(file_list, hour_ahead):
+
+    cf_list = file_list[1:3]
+
+    ch_SD_limit = optdef.Constraint()
+    ch_SD_limit.hour_ahead = hour_ahead
+    ch_SD_limit.name = 'ch_SD_limit'
+    ch_SD_limit.comment = "TEPO stop discharging limit"
+    ch_SD_limit.domain = '(t, d)'
+    ch_SD_limit.lhs = "ch_TEPO_SD(t, d)"
+    ch_SD_limit.rhs = "Bound_SD(t, d)*(1 - z_ch(t, d))"
+    ch_SD_limit.operator = 'l'
+
+    for cf_handle in cf_list:
+        ch_SD_limit.write_constraint(cf_handle)
+
+    # end write_ch_SD_limit
+
+
 def write_eq_storage_init(file_list, hour_ahead):
 
     uc_list = file_list[0:4:3]
@@ -855,156 +1052,6 @@ def write_eq_storage(file_list, hour_ahead):
         eq_storage.write_constraint(cf_handle)
 
     # end write_eq_storage
-
-
-def write_ch_total_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    ch_total_limit = optdef.Constraint()
-    ch_total_limit.hour_ahead = hour_ahead
-    ch_total_limit.name = 'ch_total_limit'
-    ch_total_limit.comment = "Energy storage charging limit"
-    ch_total_limit.domain = '(t, d)'
-    ch_total_limit.lhs = "ch_total(t, d)"
-    ch_total_limit.rhs = "ES_power_max(d)*v_ch(t, d)"
-    ch_total_limit.operator = 'l'
-
-    for cf_handle in cf_list:
-        ch_total_limit.write_constraint(cf_handle)
-
-    # end write_ch_total_limit
-
-
-def write_dis_total_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    dis_total_limit = optdef.Constraint()
-    dis_total_limit.hour_ahead = hour_ahead
-    dis_total_limit.name = 'dis_total_limit'
-    dis_total_limit.comment = "Energy storage discharging limit"
-    dis_total_limit.domain = '(t, d)'
-    dis_total_limit.lhs = "dis_total(t, d)"
-    dis_total_limit.rhs = "ES_power_max(d)*(1 - v_ch(t, d))"
-    dis_total_limit.operator = 'l'
-
-    for cf_handle in cf_list:
-        dis_total_limit.write_constraint(cf_handle)
-
-    # end write_dis_total_limit
-
-
-def write_eq_ch_total(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    eq_ch_total = optdef.Constraint()
-    eq_ch_total.hour_ahead = hour_ahead
-    eq_ch_total.name = 'eq_ch_total'
-    eq_ch_total.comment = "Energy storage total charge calculation"
-    eq_ch_total.domain = '(t, d)'
-    eq_ch_total.lhs = "ch_total(t, d)"
-    eq_ch_total.rhs = "ch_TEPO(t, d)\n"
-    eq_ch_total.rhs += 25*' ' + "+ ch_DEPO(d, t)\n"
-    eq_ch_total.rhs += 25*' ' + "- dis_TEPO_SC(t, d)"
-    eq_ch_total.operator = 'e'
-
-    eq_ch_total.write_constraint(cf_list[1])
-
-    # end write_eq_ch_total
-
-
-def write_eq_dis_total(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    eq_dis_total = optdef.Constraint()
-    eq_dis_total.hour_ahead = hour_ahead
-    eq_dis_total.name = 'eq_dis_total'
-    eq_dis_total.comment = "Energy storage total discharge calculation"
-    eq_dis_total.domain = '(t, d)'
-    eq_dis_total.lhs = "dis_total(t, d)"
-    eq_dis_total.rhs = "dis_TEPO(t, d)\n"
-    eq_dis_total.rhs += 26*' ' + "+ dis_DEPO(d, t)\n"
-    eq_dis_total.rhs += 26*' ' + "- ch_TEPO_SD(t, d)"
-    eq_dis_total.operator = 'e'
-
-    eq_dis_total.write_constraint(cf_list[1])
-
-    # end write_eq_dis_total
-
-
-def write_ch_SD_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    ch_SD_limit = optdef.Constraint()
-    ch_SD_limit.hour_ahead = hour_ahead
-    ch_SD_limit.name = 'ch_SD_limit'
-    ch_SD_limit.comment = "Stop discharging limit"
-    ch_SD_limit.domain = '(t, d)'
-    ch_SD_limit.lhs = "ch_TEPO_SD(t, d)"
-    ch_SD_limit.rhs = "Bound_SD(t, d)"
-    ch_SD_limit.operator = 'l'
-
-    ch_SD_limit.write_constraint(cf_list[1])
-
-    # end write_ch_SD_limit
-
-
-def write_dis_SC_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    dis_SC_limit = optdef.Constraint()
-    dis_SC_limit.hour_ahead = hour_ahead
-    dis_SC_limit.name = 'dis_SC_limit'
-    dis_SC_limit.comment = "Stop charging limit"
-    dis_SC_limit.domain = '(t, d)'
-    dis_SC_limit.lhs = "dis_TEPO_SC(t, d)"
-    dis_SC_limit.rhs = "Bound_SC(t, d)"
-    dis_SC_limit.operator = 'l'
-
-    dis_SC_limit.write_constraint(cf_list[1])
-
-    # end write_dis_SC_limit
-
-
-def write_ch_TEPO_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    ch_TEPO_limit = optdef.Constraint()
-    ch_TEPO_limit.hour_ahead = hour_ahead
-    ch_TEPO_limit.name = 'ch_TEPO_limit'
-    ch_TEPO_limit.comment = "TEPO charging limit"
-    ch_TEPO_limit.domain = '(t, d)'
-    ch_TEPO_limit.lhs = "ch_TEPO(t, d)"
-    ch_TEPO_limit.rhs = "Bound_ch(t, d)"
-    ch_TEPO_limit.operator = 'l'
-
-    ch_TEPO_limit.write_constraint(cf_list[1])
-
-    # end write_ch_TEPO_limit
-
-
-def write_dis_TEPO_limit(file_list, hour_ahead):
-
-    cf_list = file_list[1:3]
-
-    dis_TEPO_limit = optdef.Constraint()
-    dis_TEPO_limit.hour_ahead = hour_ahead
-    dis_TEPO_limit.name = 'dis_TEPO_limit'
-    dis_TEPO_limit.comment = "TEPO discharging limit"
-    dis_TEPO_limit.domain = '(t, d)'
-    dis_TEPO_limit.lhs = "dis_TEPO(t, d)"
-    dis_TEPO_limit.rhs = "Bound_dis(t, d)"
-    dis_TEPO_limit.operator = 'l'
-
-    dis_TEPO_limit.write_constraint(cf_list[1])
-
-    # end write_dis_TEPO_limit
 
 
 def write_soc_limit(file_list, hour_ahead):

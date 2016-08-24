@@ -62,7 +62,7 @@ class TableKernel:
         tmp_body += '\n'
 
         if self.read_flag and self.list_container[1][0]:
-            tmp_body += '*$call =xls2gms '
+            tmp_body += '$call =xls2gms '
             tmp_body += 'r=' + self.list_container[1][0] + ' '
             tmp_body += 'i=' + self.read_subdir
 

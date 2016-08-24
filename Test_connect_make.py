@@ -33,8 +33,10 @@ uc2 = open(uc2_str, 'w')
 
 file_list = [uc1, cf1, cf2, uc2]
 
-day_path = 'C:\\BPA_project\\Test_connect_DA_auto\\'
-hour_path = 'C:\\BPA_project\\Test_connect_HA_ok\\'
+day_path = 'C:\\Users\\idm\\Desktop\\BPA_project\\Test_connect_DA\\'
+hour_path = 'C:\\Users\\idm\\Desktop\\BPA_project\\Test_connect_HA\\'
+# day_path = 'C:\\BPA_project\\Test_connect_DA\\'
+# hour_path = 'C:\\BPA_project\\Test_connect_HA\\'
 
 data_subdir_ext = 'Data\\'
 depo_subdir_ext = 'DEPO\\'
@@ -165,10 +167,10 @@ optfun.write_ch_total_limit(file_list, hour_ahead)
 optfun.write_dis_total_limit(file_list, hour_ahead)
 
 # CF Model 2, Stage 3
-optfun.write_ch_SD_limit(file_list, hour_ahead)
-optfun.write_dis_SC_limit(file_list, hour_ahead)
 optfun.write_ch_TEPO_limit(file_list, hour_ahead)
+optfun.write_dis_SC_limit(file_list, hour_ahead)
 optfun.write_dis_TEPO_limit(file_list, hour_ahead)
+optfun.write_ch_SD_limit(file_list, hour_ahead)
 
 # State of charge constraints
 optfun.write_eq_storage_init(file_list, hour_ahead)
@@ -192,6 +194,12 @@ footfun.foot_line_flows(file_list, hour_ahead, path_dict)
 footfun.foot_congestion_forecast(file_list, hour_ahead, path_dict)
 footfun.foot_cf1_tepo_depo_exchange(file_list, hour_ahead, path_dict)
 footfun.foot_cf2_tepo_depo_exchange(file_list, hour_ahead, path_dict)
+
+# Unloading outputs
+footfun.output_unload_uc1(file_list, hour_ahead, path_dict)
+footfun.output_unload_cf1(file_list, hour_ahead, path_dict)
+footfun.output_unload_cf2(file_list, hour_ahead, path_dict)
+footfun.output_unload_uc2(file_list, hour_ahead, path_dict)
 
 # --------------------------------------------------------------------------- #
 # Kill file handles

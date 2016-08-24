@@ -112,19 +112,21 @@ def head_bounds(file_list, hour_ahead, path_dict):
 
     cf_list = file_list[1:3]
 
-    cf_list[1].write(79*'*' + '\n')
-    cf_list[1].write('*** AVAILABILITY BOUNDS' + 55*' ' + '*\n')
-    cf_list[1].write(79*'*' + '\n\n')
+    for cf_handle in cf_list:
+        cf_handle.write(79*'*' + '\n')
+        cf_handle.write('*** AVAILABILITY BOUNDS' + 55*' ' + '*\n')
+        cf_handle.write(79*'*' + '\n\n')
 
-    cf_bound_list = \
-        [('ch_DEPO', '(d, t)', 'ch_DEPO.csv'),
-         ('dis_DEPO', '(d, t)', 'dis_DEPO.csv'),
-         ('C_ch', '(d, t)', 'C_ch.csv'),
-         ('C_dis', '(d, t)', 'C_dis.csv'),
-         ('C_SC', '(d, t)', 'C_SC.csv'),
-         ('C_SD', '(d, t)', 'C_SD.csv'),
-         ('P_ch', '(d, t)', 'P_ch.csv'),
-         ('P_dis', '(d, t)', 'P_dis.csv')]
+    cf_bound_list = [
+        ('ch_DEPO', '(d, t)', 'ch_DEPO.csv'),
+        ('dis_DEPO', '(d, t)', 'dis_DEPO.csv'),
+        ('C_ch', '(d, t)', 'C_ch.csv'),
+        ('C_dis', '(d, t)', 'C_dis.csv'),
+        ('C_SC', '(d, t)', 'C_SC.csv'),
+        ('C_SD', '(d, t)', 'C_SD.csv'),
+        ('P_ch', '(d, t)', 'P_ch.csv'),
+        ('P_dis', '(d, t)', 'P_dis.csv')
+    ]
 
     cf_bounds = headdef.Table()
 
@@ -135,36 +137,77 @@ def head_bounds(file_list, hour_ahead, path_dict):
 
         cf_bounds.write_table(cf_list[1])
 
-    cf_bound_parameters_list = \
-        [('Bound_ch(t, d),', ''),
-         ('Bound_dis(t, d),', ''),
-         ('Bound_SD(t, d),', ''),
-         ('Bound_SC(t, d)', '')]
+    # Initial charge and discharge parameters
+
+    cf_ini_parameters_list = [
+        ('ch_ini(d, t),', ''),
+        ('dis_ini(d, t)', '')
+    ]
+
+    cf_ini_parameters = headdef.Parlist(cf_ini_parameters_list)
+    cf_ini_parameters.name = 'parameters\n'
+
+    ch_ini_rhs_list = ['(0)$(ord(t) ge 0)', 'ch_DEPO(d, t)']
+    dis_ini_rhs_list = ['(0)$(ord(t) ge 0)', 'dis_DEPO(d, t)']
+
+    if hour_ahead:
+        ch_ini_rhs_list[0] = 'ch_day(d, t)*s_base'
+        ch_ini_rhs_list[1] = 'ch_day(d, t)*s_base + ch_DEPO(d, t)'
+
+        dis_ini_rhs_list[0] = 'dis_day(d, t)*s_base'
+        dis_ini_rhs_list[1] = 'dis_day(d, t)*s_base + dis_DEPO(d, t)'
+
+    for k in range(len(cf_list)):
+        cf_ini_parameters.write_parlist(cf_list[k])
+        cf_list[k].write(
+            "** Initial energy storage charge and discharge amounts (MW)\n\n"
+            "ch_ini(d, t) = " + ch_ini_rhs_list[k] + ';\n'
+            "dis_ini(d, t) = " + dis_ini_rhs_list[k] + ';\n\n'
+        )
+
+    # Bound parameters
+
+    cf_bound_parameters_list = [
+        ('Bound_ch(t, d),', ''),
+        ('Bound_dis(t, d),', ''),
+        ('Bound_SD(t, d),', ''),
+        ('Bound_SC(t, d)', '')
+    ]
 
     cf_bound_parameters = headdef.Parlist(cf_bound_parameters_list)
     cf_bound_parameters.name = 'parameters\n'
 
-    cf_bound_parameter_string = \
-        ("** ESS bounds imposed by DEPO\n\n"
-         "Bound_ch(t, d) = (ES_power_max(d)*s_base - ch_DEPO(d, t))$(ch_DEPO(d, t) gt 0)\n"
-         "               + (ES_power_max(d)*s_base)$(dis_DEPO(d, t) gt 0)\n"
-         "               + (ES_power_max(d)*s_base)$((dis_DEPO(d, t) eq 0)\n"
-         "                                           and (ch_DEPO(d, t) eq 0));\n\n"
-         "Bound_dis(t, d) = (ES_power_max(d)*s_base)$(ch_DEPO(d, t) gt 0)\n"
-         "                + (ES_power_max(d)*s_base - dis_DEPO(d, t))$(dis_DEPO(d, t) gt 0)\n"
-         "                + (ES_power_max(d)*s_base)$((dis_DEPO(d, t) eq 0)\n"
-         "                                            and (ch_DEPO(d, t) eq 0));\n\n"
-         "Bound_SD(t, d) = (0)$(ch_DEPO(d, t) gt 0)\n"
-         "               + (dis_DEPO(d, t))$(dis_DEPO(d, t) gt 0)\n"
-         "               + (0)$((dis_DEPO(d, t) eq 0) and (ch_DEPO(d, t) eq 0));\n\n"
-         "Bound_SC(t, d) = (ch_DEPO(d, t))$(ch_DEPO(d, t) gt 0)\n"
-         "               + (0)$(dis_DEPO(d, t) gt 0)\n"
-         "               + (0)$((dis_DEPO(d, t) eq 0) and (ch_DEPO(d, t) eq 0));\n\n"
-         "** Normalizing quantities by the system base\n\n"
-         "Bound_ch(t, d) = Bound_ch(t, d)/s_base;\n"
-         "Bound_dis(t, d) = Bound_dis(t, d)/s_base;\n"
-         "Bound_SD(t, d) = Bound_SD(t, d)/s_base;\n"
-         "Bound_SC(t, d) = Bound_SC(t, d)/s_base;\n"
+    for cf_handle in cf_list:
+        cf_bound_parameters.write_parlist(cf_handle)
+
+    cf_bound_parameter_str = (
+        "** ESS bounds imposed by DEPO\n\n"
+        "Bound_ch(t, d) = (ES_power_max(d)*s_base - ch_ini(d, t))$(ch_ini(d, t) gt 0)\n"
+        "               + (ES_power_max(d)*s_base)$(dis_ini(d, t) gt 0)\n"
+        "               + (ES_power_max(d)*s_base)$((dis_ini(d, t) eq 0)\n"
+        "                                           and (ch_ini(d, t) eq 0));\n\n"
+        "Bound_dis(t, d) = (ES_power_max(d)*s_base)$(ch_ini(d, t) gt 0)\n"
+        "                + (ES_power_max(d)*s_base - dis_ini(d, t))$(dis_ini(d, t) gt 0)\n"
+        "                + (ES_power_max(d)*s_base)$((dis_ini(d, t) eq 0)\n"
+        "                                            and (ch_ini(d, t) eq 0));\n\n"
+        "Bound_SD(t, d) = (0)$(ch_ini(d, t) gt 0)\n"
+        "               + (dis_ini(d, t))$(dis_ini(d, t) gt 0)\n"
+        "               + (0)$((dis_ini(d, t) eq 0) and (ch_ini(d, t) eq 0));\n\n"
+        "Bound_SC(t, d) = (ch_ini(d, t))$(ch_ini(d, t) gt 0)\n"
+        "               + (0)$(dis_ini(d, t) gt 0)\n"
+        "               + (0)$((dis_ini(d, t) eq 0) and (ch_ini(d, t) eq 0));\n\n"
+        "** Normalizing quantities by the system base\n\n"
+        "Bound_ch(t, d) = Bound_ch(t, d)/s_base;\n"
+        "Bound_dis(t, d) = Bound_dis(t, d)/s_base;\n"
+        "Bound_SD(t, d) = Bound_SD(t, d)/s_base;\n"
+        "Bound_SC(t, d) = Bound_SC(t, d)/s_base;\n"
+        "ch_ini(d, t) = ch_ini(d, t)/s_base;\n"
+        "dis_ini(d, t) = dis_ini(d, t)/s_base;\n\n"
+    )
+
+    cf_list[0].write(cf_bound_parameter_str)
+
+    cf_bound_parameter_str += (
          "ch_DEPO(d, t) = ch_DEPO(d, t)/s_base;\n"
          "dis_DEPO(d, t) = dis_DEPO(d, t)/s_base;\n"
          "C_ch(d, t) = C_ch(d, t)*s_base;\n"
@@ -172,10 +215,10 @@ def head_bounds(file_list, hour_ahead, path_dict):
          "C_SC(d, t) = C_SC(d, t)*s_base;\n"
          "C_SD(d, t) = C_SD(d, t)*s_base;\n"
          "P_ch(d, t) = P_ch(d, t)*s_base;\n"
-         "P_dis(d, t) = P_dis(d, t)*s_base;\n\n")
+         "P_dis(d, t) = P_dis(d, t)*s_base;\n\n"
+    )
 
-    cf_bound_parameters.write_parlist(cf_list[1])
-    cf_list[1].write(cf_bound_parameter_string)
+    cf_list[1].write(cf_bound_parameter_str)
 
 
 def head_variables(file_list, hour_ahead):
@@ -228,32 +271,41 @@ def head_positive_variables(file_list, hour_ahead):
 
     uc_positive_variables.write_parlist(uc_list[1])
 
-    cf_positive_variables_list = \
-        [('ch_total(t, d)', 'total ESS charging amount'),
-         ('dis_total(t, d)', 'total ESS discharging amount'),
-         ('deltag_plus(t, i)', 'positive dev. for g'),
-         ('deltag_minus(t, i)', 'negative dev. for g'),
-         ('deltag_lin_plus(t, i, b)', 'positive dev. for g_lin'),
-         ('deltag_lin_minus(t, i, b)', 'negative dev. for g_lin'),
-         ('slack_wind_plus(t, w)', 'positive dev. for wind power spillage'),
-         ('slack_wind_minus(t, w)', 'negative dev. for wind power spillage'),
-         ('slack_solar_plus(t, r)', 'positive dev. for solar power spillage'),
-         ('slack_solar_minus(t, r)', 'negative dev. for solar power spillage'),
-         ('slack_fixed_plus(t, f)', 'positive dev. for fixed power spillage'),
-         ('slack_fixed_minus(t, f)', 'negative dev. for fixed power spillage'),
-         ('soc(t, d)', 'energy state of charge')]
+    cf_positive_variables_list = [
+        ('ch_total(t, d)', 'total ESS charging amount'),
+        ('dis_total(t, d)', 'total ESS discharging amount'),
+        ('deltag_plus(t, i)', 'positive dev. for g'),
+        ('deltag_minus(t, i)', 'negative dev. for g'),
+        ('deltag_lin_plus(t, i, b)', 'positive dev. for g_lin'),
+        ('deltag_lin_minus(t, i, b)', 'negative dev. for g_lin'),
+        ('slack_wind_plus(t, w)', 'positive dev. for wind power spillage'),
+        ('slack_wind_minus(t, w)', 'negative dev. for wind power spillage'),
+        ('slack_solar_plus(t, r)', 'positive dev. for solar power spillage'),
+        ('slack_solar_minus(t, r)', 'negative dev. for solar power spillage'),
+        ('slack_fixed_plus(t, f)', 'positive dev. for fixed power spillage'),
+        ('slack_fixed_minus(t, f)', 'negative dev. for fixed power spillage'),
+        ('soc(t, d)', 'energy state of charge'),
+        ('ch_TEPO_SD(t, d)', 'stop discharging'),
+        ('dis_TEPO_SC(t, d)', 'stop charging'),
+        ('ch_TEPO(t, d)', 'charging from TEPO'),
+        ('dis_TEPO(t, d)', 'discharging from TEPO')
+    ]
 
     cf_positive_variables = headdef.Parlist(cf_positive_variables_list)
     cf_positive_variables.name = 'positive variables\n'
 
     cf_positive_variables.write_parlist(cf_list[0])
 
-    cf_positive_variables_list += \
-        [('slack_pbal(s, t)', 'nodal power balance slack variables'),
-         ('ch_TEPO_SD(t, d)', 'stop discharging'),
-         ('dis_TEPO_SC(t, d)', 'stop charging'),
-         ('ch_TEPO(t, d)', 'charging from TEPO'),
-         ('dis_TEPO(t, d)', 'discharging from TEPO')]
+    for k in range(4):
+        cf_positive_variables_list.pop()
+
+    cf_positive_variables_list += [
+        ('slack_pbal(s, t)', 'nodal power balance slack variables'),
+        ('ch_TEPO_SD(t, d)', 'stop discharging'),
+        ('dis_TEPO_SC(t, d)', 'stop charging'),
+        ('ch_TEPO(t, d)', 'charging from TEPO'),
+        ('dis_TEPO(t, d)', 'discharging from TEPO')
+    ]
 
     cf_positive_variables.write_parlist(cf_list[1])
 
@@ -263,9 +315,11 @@ def head_binary_variables(file_list, hour_ahead):
     uc_list = file_list[0:4:3]
     cf_list = file_list[1:3]
 
-    binary_variables_list = [('v(t, i)', 'commitment variables'),
-                             ('y(t, i)', 'start up variables'),
-                             ('z(t, i)', 'shut down variables')]
+    binary_variables_list = [
+        ('v(t, i)', 'commitment variables'),
+        ('y(t, i)', 'start up variables'),
+        ('z(t, i)', 'shut down variables')
+    ]
 
     binary_variables = headdef.Parlist(binary_variables_list)
     binary_variables.name = 'binary variables\n'
@@ -273,8 +327,11 @@ def head_binary_variables(file_list, hour_ahead):
     for uc_handle in uc_list:
         binary_variables.write_parlist(uc_handle)
 
-    binary_variables_list += \
-        [('v_ch(t, d)', 'binary variable preventing simultaneous ESS action')]
+    binary_variables_list += [
+        ('v_ch(t, d)', 'binary variable for charging and discharging'),
+        ('y_ch(t, d)', 'binary variable for charging and stop charging'),
+        ('z_ch(t, d)', 'binary variable for discharging and stop discharging')
+    ]
 
     for cf_handle in cf_list:
         binary_variables.write_parlist(cf_handle)
@@ -285,61 +342,64 @@ def head_equations(file_list, hour_ahead):
     uc_list = file_list[0:4:3]
     cf_list = file_list[1:3]
 
-    equations_list = \
-        [('cost', 'objective function'),
-         ('bin_set1(t, i)', 'binary logic constraint 1'),
-         ('bin_set10(t, i)', 'binary logic constraint 1_2'),
-         ('bin_set2(t, i)', 'binary logic constraint 2'),
-         ('min_updown_1(t, i)', 'initial statuses'),
-         ('min_updown_2(t, i)', 'minimum up time constraint'),
-         ('min_updown_3(t, i)', 'minimum down time constraint'),
-         ('slack_wind_constr(t, w)', 'maximum wind spillage constraint'),
-         ('slack_solar_constr(t, r)', 'maximum solar spillage constraint'),
-         ('slack_fixed_constr(t, f)', 'maximum fixed spillage constraint'),
-         ('gen_sum(t, i)', 'summation over all blocks'),
-         ('gen_min(t, i)', 'minimum power output of generators'),
-         ('block_output(t, i, b)', 'maximum power output of each block'),
-         ('ramp_limit_min(t, i)', 'ramp dn constraint'),
-         ('ramp_limit_max(t, i)', 'ramp up constraint'),
-         ('ramp_limit_min_1(t, i)', 'ramp dn constraint for initial period'),
-         ('ramp_limit_max_1(t, i)', 'ramp up constraint for initial period'),
-         ('line_flow(t, l)', 'power flow'),
-         ('power_balance(t, s)', 'power balance equation'),
-         ('voltage_angles_min(t, s)', 'minimum voltage phase angle limits'),
-         ('voltage_angles_max(t, s)', 'maximum voltage phase angle limits')]
+    equations_list = [
+        ('cost', 'objective function'),
+        ('bin_set1(t, i)', 'binary logic constraint 1'),
+        ('bin_set10(t, i)', 'binary logic constraint 1_2'),
+        ('bin_set2(t, i)', 'binary logic constraint 2'),
+        ('min_updown_1(t, i)', 'initial statuses'),
+        ('min_updown_2(t, i)', 'minimum up time constraint'),
+        ('min_updown_3(t, i)', 'minimum down time constraint'),
+        ('slack_wind_constr(t, w)', 'maximum wind spillage constraint'),
+        ('slack_solar_constr(t, r)', 'maximum solar spillage constraint'),
+        ('slack_fixed_constr(t, f)', 'maximum fixed spillage constraint'),
+        ('gen_sum(t, i)', 'summation over all blocks'),
+        ('gen_min(t, i)', 'minimum power output of generators'),
+        ('block_output(t, i, b)', 'maximum power output of each block'),
+        ('ramp_limit_min(t, i)', 'ramp dn constraint'),
+        ('ramp_limit_max(t, i)', 'ramp up constraint'),
+        ('ramp_limit_min_1(t, i)', 'ramp dn constraint for initial period'),
+        ('ramp_limit_max_1(t, i)', 'ramp up constraint for initial period'),
+        ('line_flow(t, l)', 'power flow'),
+        ('power_balance(t, s)', 'power balance equation'),
+        ('voltage_angles_min(t, s)', 'minimum voltage phase angle limits'),
+        ('voltage_angles_max(t, s)', 'maximum voltage phase angle limits')
+    ]
 
     equations = headdef.Parlist(equations_list)
     equations.name = 'equations\n'
 
     equations.write_parlist(uc_list[0])
 
-    equations_list += [('line_capacity_min(t, l)', 'maximum line flow limits'),
-                       ('line_capacity_max(t, l)', 'minimum line flow limits')]
+    equations_list += [
+        ('line_capacity_min(t, l)', 'maximum line flow limits'),
+        ('line_capacity_max(t, l)', 'minimum line flow limits')
+    ]
 
     equations.write_parlist(uc_list[1])
 
-    equations_list += \
-        [('slack_wind_constr2(t, w)',  'minimum wind spillage constraint'),
-         ('slack_solar_constr2(t, r)', 'minimum solar spillage constraint'),
-         ('slack_fixed_constr2(t, f)', 'minimum fixed spillage constraint'),
-         ('eq_storage_init(t, d)', 'initial ESS stage of charge'),
-         ('eq_storage(t, d)', 'ESS state of charge calculation'),
-         ('soc_limit(t, d)', 'maximum ESS state of charge'),
-         ('eq_soc_final(t, d)', 'final ESS state of charge'),
-         ('ch_total_limit(t, d)', 'maximum ESS charging'),
-         ('dis_total_limit(t, d)', 'maximum ESS discharging')]
+    equations_list += [
+        ('slack_wind_constr2(t, w)',  'minimum wind spillage constraint'),
+        ('slack_solar_constr2(t, r)', 'minimum solar spillage constraint'),
+        ('slack_fixed_constr2(t, f)', 'minimum fixed spillage constraint'),
+        ('eq_storage_init(t, d)', 'initial ESS stage of charge'),
+        ('eq_storage(t, d)', 'ESS state of charge calculation'),
+        ('soc_limit(t, d)', 'maximum ESS state of charge'),
+        ('eq_soc_final(t, d)', 'final ESS state of charge'),
+        ('ch_total_limit(t, d)', 'maximum ESS charging'),
+        ('dis_total_limit(t, d)', 'maximum ESS discharging'),
+        ('eq_ch_total(t, d)', 'total ESS charge amount'),
+        ('eq_dis_total(t, d)', 'total ESS discharge amount'),
+        ('ch_SD_limit(t, d)', 'stop discharging limit'),
+        ('dis_SC_limit(t, d)', 'stop charging limit'),
+        ('ch_TEPO_limit(t, d)', 'charging from TEPO limit'),
+        ('dis_TEPO_limit(t, d)', 'discharging from TEPO limit')
+    ]
 
-    equations.write_parlist(cf_list[0])
+    for cf_handle in cf_list:
+        equations.write_parlist(cf_handle)
 
-    equations_list += \
-        [('eq_ch_total(t, d)', 'total ESS charge amount'),
-         ('eq_dis_total(t, d)', 'total ESS discharge amount'),
-         ('ch_SD_limit(t, d)', 'stop discharging limit'),
-         ('dis_SC_limit(t, d)', 'stop charging limit'),
-         ('ch_TEPO_limit(t, d)', 'charging from TEPO limit'),
-         ('dis_TEPO_limit(t, d)', 'discharging from TEPO limit')]
-
-    equations.write_parlist(cf_list[1])
+    # end head_equations
 
 
 def head_aliases(file_list, hour_ahead):
